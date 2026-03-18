@@ -41,7 +41,7 @@ logger = logging.getLogger("HEISENBERG")
 # ---------------------------------------------------------------------------
 
 SCHRODINGER_CAPITAL_LIMIT = float(os.getenv("SCHRODINGER_CAPITAL_LIMIT", "50"))
-_dirac_initial_balance: float = 0.0
+_schrodinger_initial_balance: float = 0.0
 _session_stop_triggered: bool = False
 
 # ---------------------------------------------------------------------------
@@ -431,7 +431,7 @@ bot_module.on_cycle_complete = _on_cycle_complete
 
 async def _sync_live_balance() -> None:
     """Fetch real CLOB balance and open positions, update bot_state."""
-    global _dirac_initial_balance, _session_stop_triggered
+    global _schrodinger_initial_balance, _session_stop_triggered
     try:
         from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
         client = await _oe._get_client()
@@ -446,10 +446,11 @@ async def _sync_live_balance() -> None:
         bot_state["roi"] = round((usdc_balance - dep) / dep * 100, 2) if dep > 0 else 0.0
 
         # SCHRODINGER stop-loss: halt if loss >= capital limit or >= 20% of session start
-        if _dirac_initial_balance == 0.0:
-            _dirac_initial_balance = bot_state["balance"]
-        total_loss = _dirac_initial_balance - bot_state["balance"]
-        session_loss_pct = total_loss / _dirac_initial_balance if _dirac_initial_balance > 0 else 0
+        if _schrodinger_initial_balance == 0.0:
+            _schrodinger_initial_balance = bot_state["balance"]
+        total_value = bot_state["balance"] + bot_state.get("positions_value", 0)
+        total_loss = _schrodinger_initial_balance - total_value
+        session_loss_pct = total_loss / _schrodinger_initial_balance if _schrodinger_initial_balance > 0 else 0
         if total_loss >= SCHRODINGER_CAPITAL_LIMIT or session_loss_pct >= 0.20:
             _session_stop_triggered = True
             logger.warning("SCHRODINGER HALT: loss $%.2f (%.0f%%) — trading stopped",
@@ -587,9 +588,9 @@ async def get_pnl():
 async def dirac_status():
     return {
         "halt": _session_stop_triggered,
-        "initial_balance": _dirac_initial_balance,
+        "initial_balance": _schrodinger_initial_balance,
         "current_balance": bot_state["balance"],
-        "total_loss": _dirac_initial_balance - bot_state["balance"],
+        "total_loss": _schrodinger_initial_balance - (bot_state["balance"] + bot_state.get("positions_value", 0)),
         "capital_limit": SCHRODINGER_CAPITAL_LIMIT,
     }
 
